@@ -41,7 +41,8 @@ tracker:
   track_thresh: 0.5         # high-confidence threshold (first association)
   low_thresh: 0.1           # low-confidence floor (second association)
   match_thresh: 0.8         # IoU-distance threshold (cost = 1 - IoU)
-  track_buffer: 30          # frames a lost track survives before removal
+  confirm_frames: 3         # consecutive matches to confirm a track
+  lost_window: 30           # frames a lost track survives for re-association
   min_box_area: 10.0        # ignore boxes smaller than this
 
 # --- Zones (polygon triggers; Day 4) -------------------------------------

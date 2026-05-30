@@ -1,18 +1,24 @@
-"""Multi-object tracking.
+"""Multi-object tracking with an explicit lifecycle.
 
   * Tracker          — the contract: update(detections, frame_info) -> list[Track].
-  * ByteTrackTracker — a from-scratch ByteTrack implementation.
+  * ByteTrackTracker — ByteTrack association + a clean track lifecycle.
 
 ByteTrack is chosen deliberately for Vigil's offline thesis: it associates by
 **motion only** (a Kalman filter + IoU), with NO re-identification network. There
-is no model to download, no embedding to compute, and therefore no network
-dependency of any kind — the tracker keeps working on an airgapped device. The
-two-stage cascade (match high-confidence detections first, then recover objects
-from low-confidence detections) is what gives stable IDs through occlusion.
+is no model to download and no embedding to compute, so the tracker keeps working
+on an airgapped device. Association uses greedy IoU matching (not scipy/lap), so
+it stays pure-numpy and runs with no GPU.
 
-Association uses greedy IoU matching rather than the Hungarian/LAPJV solver from
-the reference implementation, so there is no scipy/lap dependency — pure numpy.
-All of it runs and is tested with no GPU.
+Lifecycle (thresholds configurable via vigil.yaml):
+  TENTATIVE  newly seen; promoted once matched `confirm_frames` consecutive
+             frames. A tentative track that misses a frame is removed at once.
+  CONFIRMED  a real, reported object. Emitted in update()'s output.
+  LOST       a confirmed track that missed its detection; coasted on the Kalman
+             prediction and kept for re-association up to `lost_window` frames.
+  REMOVED    terminal: a tentative miss, or a lost track past its window.
+A LOST track that matches a detection again returns to CONFIRMED with the SAME
+id (occlusion recovery). Past the window it is removed, and a fresh detection
+earns a new id.
 """
 from __future__ import annotations
 
@@ -123,36 +129,34 @@ class KalmanFilter:
 
 
 # --------------------------------------------------------------------------- #
-# Single-object track state
+# Single-object track state + lifecycle
 # --------------------------------------------------------------------------- #
 
 
 class TrackState(IntEnum):
-    NEW = 0
-    TRACKED = 1
+    TENTATIVE = 0
+    CONFIRMED = 1
     LOST = 2
     REMOVED = 3
 
 
 class STrack:
-    """Internal track state for ByteTrack (Kalman state + lifecycle)."""
+    """Internal track: Kalman state + lifecycle state machine."""
 
     _count = 0
-    shared_kalman = KalmanFilter()
 
     def __init__(self, tlwh: np.ndarray, score: float, class_id: int, history_len: int = 30):
         self._tlwh = np.asarray(tlwh, dtype=np.float64)
         self.kalman_filter: Optional[KalmanFilter] = None
         self.mean: Optional[np.ndarray] = None
         self.covariance: Optional[np.ndarray] = None
-        self.is_activated = False
         self.score = float(score)
         self.class_id = int(class_id)
         self.track_id = 0
-        self.state = TrackState.NEW
+        self.state = TrackState.TENTATIVE
+        self.hits = 0
         self.frame_id = 0
         self.start_frame = 0
-        self.tracklet_len = 0
         self.time_since_update = 0
         self._history: deque[tuple[float, float]] = deque(maxlen=history_len)
 
@@ -206,51 +210,41 @@ class STrack:
     def history(self) -> list[tuple[float, float]]:
         return list(self._history)
 
-    # -- lifecycle --------------------------------------------------------
-    def activate(self, kalman_filter: KalmanFilter, frame_id: int) -> None:
+    # -- lifecycle transitions -------------------------------------------
+    def activate(self, kalman_filter: KalmanFilter, frame_id: int, confirm_frames: int) -> None:
         self.kalman_filter = kalman_filter
         self.track_id = self.next_id()
         self.mean, self.covariance = kalman_filter.initiate(self.tlwh_to_xyah(self._tlwh))
-        self.tracklet_len = 0
-        self.state = TrackState.TRACKED
-        self.is_activated = frame_id == 1  # first frame confirms immediately
+        self.hits = 1
+        self.state = (
+            TrackState.CONFIRMED if self.hits >= confirm_frames else TrackState.TENTATIVE
+        )
         self.frame_id = frame_id
         self.start_frame = frame_id
         self.time_since_update = 0
         self._history.append(self.centroid)
 
-    def re_activate(self, new_track: "STrack", frame_id: int, new_id: bool = False) -> None:
+    def update(self, new_track: "STrack", frame_id: int, confirm_frames: int) -> None:
+        self.frame_id = frame_id
+        self.hits += 1
         self.mean, self.covariance = self.kalman_filter.update(
             self.mean, self.covariance, self.tlwh_to_xyah(new_track.tlwh)
         )
-        self.tracklet_len = 0
-        self.state = TrackState.TRACKED
-        self.is_activated = True
-        self.frame_id = frame_id
-        self.time_since_update = 0
-        self.score = new_track.score
-        self.class_id = new_track.class_id
-        if new_id:
-            self.track_id = self.next_id()
-        self._history.append(self.centroid)
-
-    def update(self, new_track: "STrack", frame_id: int) -> None:
-        self.frame_id = frame_id
-        self.tracklet_len += 1
-        self.mean, self.covariance = self.kalman_filter.update(
-            self.mean, self.covariance, self.tlwh_to_xyah(new_track.tlwh)
-        )
-        self.state = TrackState.TRACKED
-        self.is_activated = True
         self.score = new_track.score
         self.class_id = new_track.class_id
         self.time_since_update = 0
+        if self.state == TrackState.LOST:
+            self.state = TrackState.CONFIRMED  # re-association keeps the id
+        elif self.state == TrackState.TENTATIVE and self.hits >= confirm_frames:
+            self.state = TrackState.CONFIRMED
         self._history.append(self.centroid)
 
     def predict(self) -> None:
+        if self.mean is None:
+            return
         mean_state = self.mean.copy()
-        if self.state != TrackState.TRACKED:
-            mean_state[7] = 0  # do not drift height when not actively tracked
+        if self.state != TrackState.CONFIRMED:
+            mean_state[7] = 0  # do not drift height when not actively confirmed
         self.mean, self.covariance = self.kalman_filter.predict(mean_state, self.covariance)
         self.time_since_update += 1
 
@@ -317,50 +311,21 @@ def _greedy_match(
     return matches, u_track, u_det
 
 
-def _join(a: list[STrack], b: list[STrack]) -> list[STrack]:
-    seen = {t.track_id for t in a}
-    return a + [t for t in b if t.track_id not in seen]
-
-
-def _sub(a: list[STrack], b: list[STrack]) -> list[STrack]:
-    ids = {t.track_id for t in b}
-    return [t for t in a if t.track_id not in ids]
-
-
-def _remove_duplicate(
-    tracks_a: list[STrack], tracks_b: list[STrack]
-) -> tuple[list[STrack], list[STrack]]:
-    if not tracks_a or not tracks_b:
-        return tracks_a, tracks_b
-    pdist = _iou_distance(tracks_a, tracks_b)
-    dup_a: set[int] = set()
-    dup_b: set[int] = set()
-    for ia, ib in zip(*np.where(pdist < 0.15)):
-        age_a = tracks_a[ia].frame_id - tracks_a[ia].start_frame
-        age_b = tracks_b[ib].frame_id - tracks_b[ib].start_frame
-        if age_a > age_b:
-            dup_b.add(ib)
-        else:
-            dup_a.add(ia)
-    res_a = [t for i, t in enumerate(tracks_a) if i not in dup_a]
-    res_b = [t for i, t in enumerate(tracks_b) if i not in dup_b]
-    return res_a, res_b
-
-
 # --------------------------------------------------------------------------- #
 # ByteTrack
 # --------------------------------------------------------------------------- #
 
 
 class ByteTrackTracker(Tracker):
-    """ByteTrack: two-stage motion-only association. No ReID, no network."""
+    """ByteTrack two-stage association with an explicit track lifecycle."""
 
     def __init__(
         self,
         track_thresh: float = 0.5,
         low_thresh: float = 0.1,
         match_thresh: float = 0.8,
-        track_buffer: int = 30,
+        confirm_frames: int = 3,
+        lost_window: int = 30,
         min_box_area: float = 10.0,
         history_len: int = 30,
         class_names: Sequence[str] = COCO_CLASSES,
@@ -368,21 +333,18 @@ class ByteTrackTracker(Tracker):
         self.track_thresh = track_thresh
         self.low_thresh = low_thresh
         self.match_thresh = match_thresh
+        self.confirm_frames = max(1, int(confirm_frames))
+        self.lost_window = int(lost_window)
         self.min_box_area = min_box_area
         self.history_len = history_len
         self.class_names = class_names
-        self.max_time_lost = int(track_buffer)
         self.kalman_filter = KalmanFilter()
-        self.tracked: list[STrack] = []
-        self.lost: list[STrack] = []
-        self.removed: list[STrack] = []
+        self.tracks: list[STrack] = []  # TENTATIVE / CONFIRMED / LOST
         self.frame_id = 0
         STrack.reset_count()
 
     def reset(self) -> None:
-        self.tracked.clear()
-        self.lost.clear()
-        self.removed.clear()
+        self.tracks.clear()
         self.frame_id = 0
         STrack.reset_count()
 
@@ -390,92 +352,79 @@ class ByteTrackTracker(Tracker):
         self, detections: list[Detection], frame_info: "Frame | None" = None
     ) -> list[Track]:
         self.frame_id += 1
-        activated: list[STrack] = []
-        refind: list[STrack] = []
-        lost_now: list[STrack] = []
-        removed_now: list[STrack] = []
+        cf = self.confirm_frames
 
-        # Build STrack detections, dropping tiny boxes.
-        stracks: list[STrack] = []
+        # Build detection STracks, dropping tiny boxes; split by confidence.
+        dets: list[STrack] = []
         for det in detections:
             tlwh = STrack.xyxy_to_tlwh(det.bbox)
             if tlwh[2] * tlwh[3] < self.min_box_area:
                 continue
-            stracks.append(STrack(tlwh, det.confidence, det.class_id, self.history_len))
+            dets.append(STrack(tlwh, det.confidence, det.class_id, self.history_len))
+        high = [s for s in dets if s.score >= self.track_thresh]
+        low = [s for s in dets if self.low_thresh <= s.score < self.track_thresh]
 
-        high = [s for s in stracks if s.score >= self.track_thresh]
-        low = [s for s in stracks if self.low_thresh <= s.score < self.track_thresh]
-
-        unconfirmed = [t for t in self.tracked if not t.is_activated]
-        tracked = [t for t in self.tracked if t.is_activated]
-
-        # Predict current location of all pooled tracks.
-        pool = _join(tracked, self.lost)
-        for track in pool:
+        # Predict every live track to the current frame.
+        for track in self.tracks:
             track.predict()
 
-        # Stage 1: high-confidence detections vs tracked + lost.
-        dists = _iou_distance(pool, high)
-        matches, u_track, u_det = _greedy_match(dists, self.match_thresh)
-        for it, idet in matches:
-            track, det = pool[it], high[idet]
-            if track.state == TrackState.TRACKED:
-                track.update(det, self.frame_id)
-                activated.append(track)
-            else:
-                track.re_activate(det, self.frame_id)
-                refind.append(track)
+        confirmed = [t for t in self.tracks if t.state == TrackState.CONFIRMED]
+        lost = [t for t in self.tracks if t.state == TrackState.LOST]
+        tentative = [t for t in self.tracks if t.state == TrackState.TENTATIVE]
+        matched: set[int] = set()
 
-        # Stage 2: low-confidence detections vs still-unmatched tracked tracks.
-        r_tracked = [pool[i] for i in u_track if pool[i].state == TrackState.TRACKED]
-        dists = _iou_distance(r_tracked, low)
-        matches, u_track2, _ = _greedy_match(dists, 0.5)
-        for it, idet in matches:
-            r_tracked[it].update(low[idet], self.frame_id)
-            activated.append(r_tracked[it])
-        for i in u_track2:
-            track = r_tracked[i]
-            if track.state != TrackState.LOST:
-                track.mark_lost()
-                lost_now.append(track)
+        # Stage 1: high-confidence detections vs confirmed + lost tracks.
+        pool = confirmed + lost
+        m1, u_t1, u_d1 = _greedy_match(_iou_distance(pool, high), self.match_thresh)
+        for it, idet in m1:
+            pool[it].update(high[idet], self.frame_id, cf)
+            matched.add(pool[it].track_id)
 
-        # Unconfirmed tracks vs remaining high detections.
-        remaining_high = [high[i] for i in u_det]
-        dists = _iou_distance(unconfirmed, remaining_high)
-        matches, u_unconf, u_det2 = _greedy_match(dists, 0.7)
-        for it, idet in matches:
-            unconfirmed[it].update(remaining_high[idet], self.frame_id)
-            activated.append(unconfirmed[it])
-        for i in u_unconf:
-            track = unconfirmed[i]
-            track.mark_removed()
-            removed_now.append(track)
+        # Stage 2: low-confidence detections vs still-unmatched confirmed tracks.
+        rem_confirmed = [
+            pool[i] for i in u_t1 if pool[i].state == TrackState.CONFIRMED
+        ]
+        m2, _, _ = _greedy_match(_iou_distance(rem_confirmed, low), 0.5)
+        for it, idet in m2:
+            rem_confirmed[it].update(low[idet], self.frame_id, cf)
+            matched.add(rem_confirmed[it].track_id)
 
-        # Spawn new tracks from leftover high detections.
-        for i in u_det2:
-            det = remaining_high[i]
+        # Stage 3: tentative tracks vs remaining high-confidence detections.
+        rem_high = [high[i] for i in u_d1]
+        m3, u_t3, u_d3 = _greedy_match(_iou_distance(tentative, rem_high), 0.7)
+        for it, idet in m3:
+            tentative[it].update(rem_high[idet], self.frame_id, cf)
+            matched.add(tentative[it].track_id)
+
+        # Unmatched lifecycle transitions.
+        for t in tentative:
+            if t.track_id not in matched:
+                t.mark_removed()  # a tentative miss dies immediately
+        for t in pool:  # confirmed + lost
+            if t.track_id not in matched and t.state == TrackState.CONFIRMED:
+                t.mark_lost()
+
+        # Spawn new tentative tracks from leftover high detections.
+        for i in u_d3:
+            det = rem_high[i]
             if det.score < self.track_thresh:
                 continue
-            det.activate(self.kalman_filter, self.frame_id)
-            activated.append(det)
+            det.activate(self.kalman_filter, self.frame_id, cf)
+            self.tracks.append(det)
 
-        # Expire stale lost tracks.
-        for track in self.lost:
-            if self.frame_id - track.frame_id > self.max_time_lost:
-                track.mark_removed()
-                removed_now.append(track)
+        # Expire lost tracks past their window.
+        for t in self.tracks:
+            if t.state == TrackState.LOST and t.time_since_update > self.lost_window:
+                t.mark_removed()
 
-        # Rebuild state lists.
-        self.tracked = [t for t in self.tracked if t.state == TrackState.TRACKED]
-        self.tracked = _join(self.tracked, activated)
-        self.tracked = _join(self.tracked, refind)
-        self.lost = _sub(self.lost, self.tracked)
-        self.lost.extend(lost_now)
-        self.lost = _sub(self.lost, self.removed)
-        self.removed.extend(removed_now)
-        self.tracked, self.lost = _remove_duplicate(self.tracked, self.lost)
+        # Drop removed tracks.
+        self.tracks = [t for t in self.tracks if t.state != TrackState.REMOVED]
 
-        return [self._to_track(t) for t in self.tracked if t.is_activated]
+        return [
+            self._to_track(t)
+            for t in self.tracks
+            if t.state == TrackState.CONFIRMED and t.time_since_update == 0
+        ]
 
     def _to_track(self, s: STrack) -> Track:
         tlbr = s.tlbr
@@ -503,6 +452,7 @@ def build_tracker(config: "VigilConfig") -> ByteTrackTracker:
         track_thresh=t.track_thresh,
         low_thresh=t.low_thresh,
         match_thresh=t.match_thresh,
-        track_buffer=t.track_buffer,
+        confirm_frames=t.confirm_frames,
+        lost_window=t.lost_window,
         min_box_area=t.min_box_area,
     )

@@ -93,12 +93,13 @@ class ModelConfig:
 
 @dataclass
 class TrackerConfig:
-    """ByteTrack parameters (Day 3). No ReID model — fully offline."""
+    """ByteTrack parameters + lifecycle thresholds (Day 3). No ReID — offline."""
 
     track_thresh: float = 0.5  # high-confidence threshold for the first stage
     low_thresh: float = 0.1  # floor for low-confidence (second stage)
     match_thresh: float = 0.8  # IoU-distance threshold (cost = 1 - IoU)
-    track_buffer: int = 30  # frames a lost track is kept before removal
+    confirm_frames: int = 3  # consecutive matches to confirm (TENTATIVE->CONFIRMED)
+    lost_window: int = 30  # frames a lost track is kept for re-association
     min_box_area: float = 10.0  # ignore boxes smaller than this (pixels^2)
 
 

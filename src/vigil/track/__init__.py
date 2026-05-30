@@ -1,6 +1,23 @@
 """Vigil tracking: ByteTrack with persistent IDs, no ReID, fully offline."""
 from __future__ import annotations
 
-from vigil.track.tracker import ByteTrackTracker, KalmanFilter, Tracker, build_tracker
+from vigil.track.metrics import TrackMetrics, associate_tracks_to_gt
+from vigil.track.tracker import (
+    ByteTrackTracker,
+    KalmanFilter,
+    STrack,
+    Tracker,
+    TrackState,
+    build_tracker,
+)
 
-__all__ = ["ByteTrackTracker", "KalmanFilter", "Tracker", "build_tracker"]
+__all__ = [
+    "ByteTrackTracker",
+    "KalmanFilter",
+    "STrack",
+    "TrackMetrics",
+    "TrackState",
+    "Tracker",
+    "associate_tracks_to_gt",
+    "build_tracker",
+]
