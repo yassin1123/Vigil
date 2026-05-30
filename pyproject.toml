@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vigil"
+version = "0.1.0"
+description = "Vigil — on-device edge inference core (offline computer-vision pipeline)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+dependencies = [
+  "numpy>=1.24",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# OpenCV is needed for file decoding and the live CSI pipeline.
+#
+# IMPORTANT: on the JETSON, do NOT `pip install opencv-python`. Use the system
+# OpenCV from JetPack — it is built with CUDA + GStreamer, which the pip wheel
+# is not. Installing the wheel into the run environment shadows the system build
+# and breaks the CSI pipeline. Install this [dev] extra on dev/CI machines only;
+# on the Jetson install the package with no extras and rely on system OpenCV.
+dev = [
+  "opencv-python>=4.8",
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

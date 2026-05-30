@@ -1,0 +1,159 @@
+"""Core typed records used across Vigil.
+
+These are the values that flow through the pipeline: a `Detection` is what the
+detector emits, a `Track` is a detection followed across frames, and an `Event`
+is something worth logging. All are JSON-serialisable via `to_dict()` /
+`from_dict()` so they can cross the tamper-evident log and the web API
+unchanged.
+
+`Track` and `Event` are intentionally minimal here — they are placeholders that
+grow on Day 3 (ByteTrack) and Days 4–5 (zones + hash-chained log). The fields
+that already exist are stable; later days add to them.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+# Axis-aligned bounding box in pixels, top-left origin: (x1, y1, x2, y2).
+BBox = tuple[float, float, float, float]
+
+
+@dataclass(frozen=True, slots=True)
+class Detection:
+    """A single object detection in one frame.
+
+    Immutable and cheap to construct (created per object per frame). Geometry
+    helpers are derived, not stored.
+    """
+
+    bbox: BBox
+    class_id: int
+    class_name: str
+    confidence: float
+
+    @property
+    def x1(self) -> float:
+        return self.bbox[0]
+
+    @property
+    def y1(self) -> float:
+        return self.bbox[1]
+
+    @property
+    def x2(self) -> float:
+        return self.bbox[2]
+
+    @property
+    def y2(self) -> float:
+        return self.bbox[3]
+
+    @property
+    def width(self) -> float:
+        return self.bbox[2] - self.bbox[0]
+
+    @property
+    def height(self) -> float:
+        return self.bbox[3] - self.bbox[1]
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+    @property
+    def centroid(self) -> tuple[float, float]:
+        return (self.bbox[0] + self.bbox[2]) / 2.0, (self.bbox[1] + self.bbox[3]) / 2.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bbox": [float(v) for v in self.bbox],
+            "class_id": int(self.class_id),
+            "class_name": str(self.class_name),
+            "confidence": float(self.confidence),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Detection":
+        b = data["bbox"]
+        return cls(
+            bbox=(float(b[0]), float(b[1]), float(b[2]), float(b[3])),
+            class_id=int(data["class_id"]),
+            class_name=str(data["class_name"]),
+            confidence=float(data["confidence"]),
+        )
+
+
+@dataclass(slots=True)
+class Track:
+    """A detection associated across frames with a persistent id.
+
+    Placeholder for Day 3 (ByteTrack). The id and current detection are stable;
+    lifecycle/occlusion fields are added when tracking lands.
+    """
+
+    track_id: int
+    detection: Detection
+    age: int = 0  # frames since the track was first created
+    hits: int = 1  # number of detections associated with this track
+    time_since_update: int = 0  # frames since the last association
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "track_id": int(self.track_id),
+            "detection": self.detection.to_dict(),
+            "age": int(self.age),
+            "hits": int(self.hits),
+            "time_since_update": int(self.time_since_update),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Track":
+        return cls(
+            track_id=int(data["track_id"]),
+            detection=Detection.from_dict(data["detection"]),
+            age=int(data.get("age", 0)),
+            hits=int(data.get("hits", 1)),
+            time_since_update=int(data.get("time_since_update", 0)),
+        )
+
+
+class EventType(str, Enum):
+    """Kinds of loggable event. Grows as the pipeline grows."""
+
+    ZONE_ENTRY = "ZONE_ENTRY"
+    ZONE_EXIT = "ZONE_EXIT"
+
+
+@dataclass(slots=True)
+class Event:
+    """Something worth recording in the tamper-evident log.
+
+    Placeholder for Days 4–5 (zone engine + hash-chained log). `detail` carries
+    event-specific payload without changing the schema.
+    """
+
+    event_type: EventType
+    timestamp: float
+    track_id: int | None = None
+    zone_id: str | None = None
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_type": self.event_type.value,
+            "timestamp": float(self.timestamp),
+            "track_id": self.track_id,
+            "zone_id": self.zone_id,
+            "detail": self.detail,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Event":
+        return cls(
+            event_type=EventType(data["event_type"]),
+            timestamp=float(data["timestamp"]),
+            track_id=data.get("track_id"),
+            zone_id=data.get("zone_id"),
+            detail=dict(data.get("detail", {})),
+        )

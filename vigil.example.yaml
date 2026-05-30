@@ -1,0 +1,60 @@
+# Vigil configuration — the single source of truth for the whole system.
+# Copy to `vigil.yaml` and edit. `make run` uses vigil.yaml if present, else
+# falls back to this file. Every section is optional; omitted keys use defaults.
+
+# --- Camera (used when source.kind = csi) --------------------------------
+camera:
+  sensor_id: 0
+  width: 1920
+  height: 1080
+  framerate: 30
+  flip_method: 0          # nvvidconv flip: 0=none, 2=180deg
+
+# --- Frame source --------------------------------------------------------
+# kind: csi  -> live CSI camera (Jetson only; uses the [camera] section above)
+#       file -> a video file or a directory of images (CI / benchmark)
+#       mock -> deterministic synthetic frames (no hardware; the default)
+source:
+  kind: mock
+  file:
+    path: tests/data/clip   # a video file OR a directory of images
+    fps: 30.0
+    loop: false
+  mock:
+    width: 640
+    height: 480
+    num_frames: 100
+    fps: 30.0
+
+# --- Detection model (YOLOv8n -> TensorRT INT8; built Day 1 S3) -----------
+model:
+  engine_path: models/yolov8n.engine
+  onnx_path: models/yolov8n.onnx
+  weights_path: models/yolov8n.pt
+  input_size: 640
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  class_filter: []          # empty = keep all classes
+
+# --- Zones (polygon triggers; Day 4) -------------------------------------
+zones:
+  path: config/zones.yaml
+
+# --- Tamper-evident event log (hash-chained JSONL; Day 5) ----------------
+log:
+  path: logs/events.jsonl
+  export_dir: /media/vigil-export   # USB mount target for offline export
+
+# --- Operator UI (Day 6) -------------------------------------------------
+ui:
+  opencv_window: true
+  web_enabled: true
+  web_host: 127.0.0.1       # localhost only — Vigil has no remote-access surface
+  web_port: 8000
+  mjpeg_fps: 15
+
+# --- Telemetry / safety thresholds (Day 2 / Day 6) -----------------------
+telemetry:
+  poll_interval_s: 2.0
+  max_temp_c: 80.0
+  max_power_w: 15.0
