@@ -26,7 +26,7 @@ import abc
 from collections import deque
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -425,6 +425,32 @@ class ByteTrackTracker(Tracker):
             for t in self.tracks
             if t.state == TrackState.CONFIRMED and t.time_since_update == 0
         ]
+
+    def active_tracks(self) -> list[Track]:
+        """Currently confirmed (reported) tracks."""
+        return [
+            self._to_track(t) for t in self.tracks if t.state == TrackState.CONFIRMED
+        ]
+
+    def track_by_id(self, track_id: int) -> Optional[Track]:
+        """Look up a confirmed or coasting (lost) track by its id, else None."""
+        for t in self.tracks:
+            if t.track_id == track_id and t.state in (
+                TrackState.CONFIRMED,
+                TrackState.LOST,
+            ):
+                return self._to_track(t)
+        return None
+
+    def snapshot(self, frame_info: "Frame | None" = None) -> dict[str, Any]:
+        """A compact, JSON-serialisable snapshot of the current confirmed tracks."""
+        tracks = self.active_tracks()
+        return {
+            "frame": getattr(frame_info, "index", self.frame_id - 1),
+            "timestamp": getattr(frame_info, "timestamp", None),
+            "count": len(tracks),
+            "tracks": [t.snapshot() for t in tracks],
+        }
 
     def _to_track(self, s: STrack) -> Track:
         tlbr = s.tlbr

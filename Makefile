@@ -20,7 +20,8 @@ help: ## Show available targets
 	@echo "  make test          Run the unit tests (no hardware required)"
 	@echo "  make lint          Lint with ruff"
 	@echo "  make format        Auto-format + autofix with ruff"
-	@echo "  make run           Pump frames from the configured source"
+	@echo "  make run           Capture -> detect -> track over the configured source"
+	@echo "  make track-demo    Print a track timeline for the committed demo clip"
 	@echo "  make bringup       On-Jetson: device + camera baseline -> docs/baseline/"
 	@echo "  make check-device  Probe Jetson/CUDA/TensorRT/camera"
 	@echo "  make camera-probe  Capture CSI frames, measure FPS"
@@ -39,8 +40,11 @@ format: ## Auto-format and apply safe fixes
 	$(PYTHON) -m ruff format $(SRC) tests $(SCRIPTS)
 	$(PYTHON) -m ruff check --fix $(SRC) tests $(SCRIPTS)
 
-run: ## Pump frames from the configured FrameSource
-	PYTHONPATH=$(SRC) $(PYTHON) -m vigil --max-frames 100
+run: ## Capture -> detect -> track over the configured source
+	PYTHONPATH=$(SRC) $(PYTHON) -m vigil run --max-frames 100
+
+track-demo: ## Print a track timeline for the committed demo clip (no GPU)
+	PYTHONPATH=$(SRC) $(PYTHON) -m vigil track-demo
 
 bringup: check-device camera-probe ## Full Day-1 bring-up baseline (Jetson)
 	@echo ""

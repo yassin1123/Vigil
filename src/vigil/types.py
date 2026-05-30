@@ -119,6 +119,18 @@ class Track:
             "history": [[float(x), float(y)] for x, y in self.history],
         }
 
+    def snapshot(self) -> dict[str, Any]:
+        """A compact, JSON-friendly view for per-frame snapshots (no history)."""
+        cx, cy = self.centroid
+        return {
+            "id": int(self.track_id),
+            "class": str(self.class_name),
+            "bbox": [round(float(v), 1) for v in self.bbox],
+            "centroid": [round(cx, 1), round(cy, 1)],
+            "confidence": round(float(self.confidence), 3),
+            "age": int(self.age),
+        }
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Track":
         b = data["bbox"]
