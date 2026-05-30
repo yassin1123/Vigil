@@ -1,0 +1,23 @@
+# Vigil develops on any OS but runs on the Jetson (Linux). Force LF on all text
+# so Makefiles, shell, and shebang'd Python scripts work on the target device
+# regardless of the dev machine's OS.
+* text=auto eol=lf
+
+*.py     text eol=lf
+*.sh     text eol=lf
+*.md     text eol=lf
+*.json   text eol=lf
+*.toml   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+Makefile text eol=lf
+
+# Binary artifacts — never normalise
+*.jpg    binary
+*.jpeg   binary
+*.png    binary
+*.gif    binary
+*.engine binary
+*.onnx   binary
+*.trt    binary
+*.pt     binary

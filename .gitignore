@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Test / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Vigil — large/generated runtime artifacts (NOT the committed baseline)
+# The baseline under docs/baseline/ IS committed as the honest record.
+*.engine
+*.onnx
+*.trt
+models/*.pt
+logs/*.jsonl
+captures/
