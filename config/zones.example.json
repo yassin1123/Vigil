@@ -1,0 +1,19 @@
+{
+  "resolution": [1920, 1080],
+  "zones": [
+    {
+      "id": "loading-dock",
+      "name": "Loading Dock",
+      "kind": "include",
+      "classes": ["person"],
+      "polygon": [[300, 200], [1100, 200], [1100, 800], [300, 800]]
+    },
+    {
+      "id": "public-road",
+      "name": "Public Road (ignore)",
+      "kind": "exclude",
+      "classes": [],
+      "polygon": [[0, 900], [1920, 900], [1920, 1080], [0, 1080]]
+    }
+  ]
+}

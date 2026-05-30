@@ -12,6 +12,7 @@ license = { text = "Proprietary" }
 dependencies = [
   "numpy>=1.24",
   "PyYAML>=6.0",
+  "shapely>=2.0",
 ]
 
 [project.scripts]

@@ -105,9 +105,9 @@ class TrackerConfig:
 
 @dataclass
 class ZonesConfig:
-    """Polygon zone definitions (Day 4)."""
+    """Polygon zone definitions — a local JSON file (Day 4)."""
 
-    path: str = "config/zones.yaml"
+    path: str = "config/zones.json"
 
 
 @dataclass

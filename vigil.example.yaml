@@ -45,9 +45,9 @@ tracker:
   lost_window: 30           # frames a lost track survives for re-association
   min_box_area: 10.0        # ignore boxes smaller than this
 
-# --- Zones (polygon triggers; Day 4) -------------------------------------
+# --- Zones (polygon triggers; Day 4) — a local JSON file, never fetched --
 zones:
-  path: config/zones.yaml
+  path: config/zones.json
 
 # --- Tamper-evident event log (hash-chained JSONL; Day 5) ----------------
 log:
