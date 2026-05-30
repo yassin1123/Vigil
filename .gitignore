@@ -28,6 +28,10 @@ Thumbs.db
 *.engine
 *.onnx
 *.trt
-models/*.pt
+*.calib.cache
 logs/*.jsonl
 captures/
+
+# Built model artifacts are hardware-specific — build on target, never commit.
+models/*
+!models/README.md
