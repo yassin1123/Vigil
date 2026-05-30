@@ -86,35 +86,51 @@ class Detection:
 
 @dataclass(slots=True)
 class Track:
-    """A detection associated across frames with a persistent id.
+    """A detection followed across frames with a persistent id.
 
-    Placeholder for Day 3 (ByteTrack). The id and current detection are stable;
-    lifecycle/occlusion fields are added when tracking lands.
+    Produced by the tracker (Day 3). `bbox` is the current (possibly
+    motion-predicted) box; `history` is recent centroids oldest->newest, used
+    for drawing trails and reasoning about motion through zones (Day 4).
     """
 
     track_id: int
-    detection: Detection
-    age: int = 0  # frames since the track was first created
-    hits: int = 1  # number of detections associated with this track
-    time_since_update: int = 0  # frames since the last association
+    class_id: int
+    class_name: str
+    bbox: BBox
+    confidence: float
+    age: int = 0  # frames since the track was created (frames seen)
+    time_since_update: int = 0  # frames since the last associated detection
+    history: list[tuple[float, float]] = field(default_factory=list)
+
+    @property
+    def centroid(self) -> tuple[float, float]:
+        return (self.bbox[0] + self.bbox[2]) / 2.0, (self.bbox[1] + self.bbox[3]) / 2.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "track_id": int(self.track_id),
-            "detection": self.detection.to_dict(),
+            "class_id": int(self.class_id),
+            "class_name": str(self.class_name),
+            "bbox": [float(v) for v in self.bbox],
+            "confidence": float(self.confidence),
+            "centroid": list(self.centroid),
             "age": int(self.age),
-            "hits": int(self.hits),
             "time_since_update": int(self.time_since_update),
+            "history": [[float(x), float(y)] for x, y in self.history],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Track":
+        b = data["bbox"]
         return cls(
             track_id=int(data["track_id"]),
-            detection=Detection.from_dict(data["detection"]),
+            class_id=int(data["class_id"]),
+            class_name=str(data["class_name"]),
+            bbox=(float(b[0]), float(b[1]), float(b[2]), float(b[3])),
+            confidence=float(data["confidence"]),
             age=int(data.get("age", 0)),
-            hits=int(data.get("hits", 1)),
             time_since_update=int(data.get("time_since_update", 0)),
+            history=[(float(x), float(y)) for x, y in data.get("history", [])],
         )
 
 

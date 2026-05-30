@@ -36,6 +36,14 @@ model:
   iou_threshold: 0.45
   class_filter: []          # empty = keep all classes
 
+# --- Tracker (ByteTrack; Day 3) — no ReID model, fully offline -----------
+tracker:
+  track_thresh: 0.5         # high-confidence threshold (first association)
+  low_thresh: 0.1           # low-confidence floor (second association)
+  match_thresh: 0.8         # IoU-distance threshold (cost = 1 - IoU)
+  track_buffer: 30          # frames a lost track survives before removal
+  min_box_area: 10.0        # ignore boxes smaller than this
+
 # --- Zones (polygon triggers; Day 4) -------------------------------------
 zones:
   path: config/zones.yaml

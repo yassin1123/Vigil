@@ -23,11 +23,21 @@ def test_detection_roundtrip_is_serialisable():
     assert Detection.from_dict(data) == det
 
 
-def test_track_roundtrip():
-    det = Detection(bbox=(0.0, 0.0, 10.0, 10.0), class_id=2, class_name="dog", confidence=0.7)
-    track = Track(track_id=42, detection=det, age=3, hits=4, time_since_update=1)
+def test_track_roundtrip_and_centroid():
+    track = Track(
+        track_id=42,
+        class_id=2,
+        class_name="dog",
+        bbox=(0.0, 0.0, 10.0, 20.0),
+        confidence=0.7,
+        age=3,
+        time_since_update=1,
+        history=[(1.0, 2.0), (3.0, 4.0)],
+    )
+    assert track.centroid == (5.0, 10.0)
     data = track.to_dict()
     json.dumps(data)
+    assert data["centroid"] == [5.0, 10.0]
     assert Track.from_dict(data) == track
 
 

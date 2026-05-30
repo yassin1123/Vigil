@@ -92,6 +92,17 @@ class ModelConfig:
 
 
 @dataclass
+class TrackerConfig:
+    """ByteTrack parameters (Day 3). No ReID model — fully offline."""
+
+    track_thresh: float = 0.5  # high-confidence threshold for the first stage
+    low_thresh: float = 0.1  # floor for low-confidence (second stage)
+    match_thresh: float = 0.8  # IoU-distance threshold (cost = 1 - IoU)
+    track_buffer: int = 30  # frames a lost track is kept before removal
+    min_box_area: float = 10.0  # ignore boxes smaller than this (pixels^2)
+
+
+@dataclass
 class ZonesConfig:
     """Polygon zone definitions (Day 4)."""
 
@@ -134,6 +145,7 @@ class VigilConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     source: SourceConfig = field(default_factory=SourceConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    tracker: TrackerConfig = field(default_factory=TrackerConfig)
     zones: ZonesConfig = field(default_factory=ZonesConfig)
     log: LogConfig = field(default_factory=LogConfig)
     ui: UIConfig = field(default_factory=UIConfig)
@@ -155,6 +167,7 @@ class VigilConfig:
             camera=_build(CameraConfig, data.get("camera"), "camera"),
             source=SourceConfig.from_dict(data.get("source")),
             model=_build(ModelConfig, data.get("model"), "model"),
+            tracker=_build(TrackerConfig, data.get("tracker"), "tracker"),
             zones=_build(ZonesConfig, data.get("zones"), "zones"),
             log=_build(LogConfig, data.get("log"), "log"),
             ui=_build(UIConfig, data.get("ui"), "ui"),
