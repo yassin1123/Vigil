@@ -5,7 +5,15 @@ from vigil.config import VigilConfig, load_config
 from vigil.detect import Detector, MockDetector, TensorRTDetector
 from vigil.frames import Frame, FrameSource, build_frame_source
 from vigil.track import ByteTrackTracker, Tracker, build_tracker
-from vigil.types import BBox, Detection, Event, EventType, Track
+from vigil.types import (
+    BBox,
+    Detection,
+    Event,
+    EventType,
+    SystemEvent,
+    SystemEventType,
+    Track,
+)
 
 __version__ = "0.1.0"
 
@@ -19,6 +27,8 @@ __all__ = [
     "Frame",
     "FrameSource",
     "MockDetector",
+    "SystemEvent",
+    "SystemEventType",
     "TensorRTDetector",
     "Track",
     "Tracker",

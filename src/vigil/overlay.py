@@ -7,10 +7,14 @@ Reused by `vigil run --show` now and the Day-6 operator UI later.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from vigil.types import Detection, Track
+
+if TYPE_CHECKING:
+    from vigil.zones.model import ZoneSet
 
 # Distinct-ish BGR palette indexed by track id.
 _PALETTE: tuple[tuple[int, int, int], ...] = (
@@ -66,4 +70,25 @@ def draw_tracks(
         if draw_trail and len(track.history) > 1:
             pts = np.asarray(track.history, dtype=np.int32).reshape(-1, 1, 2)
             cv2.polylines(out, [pts], isClosed=False, color=color, thickness=2)
+    return out
+
+
+def draw_zones(image: np.ndarray, zone_set: "ZoneSet") -> np.ndarray:
+    """Draw zone polygons (scaled to the image) — green INCLUDE, red EXCLUDE."""
+    import cv2
+
+    from vigil.zones.geometry import scale_points
+
+    out = image.copy()
+    h, w = out.shape[:2]
+    for zone in zone_set:
+        pts = scale_points(zone.polygon, zone_set.resolution, (w, h))
+        poly = np.asarray(pts, dtype=np.int32).reshape(-1, 1, 2)
+        color = (40, 200, 40) if zone.kind.value == "include" else (40, 40, 220)
+        cv2.polylines(out, [poly], isClosed=True, color=color, thickness=2)
+        x, y = int(pts[0][0]), int(pts[0][1])
+        cv2.putText(
+            out, f"{zone.id} [{zone.kind.value}]", (x, max(12, y - 4)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA,
+        )
     return out

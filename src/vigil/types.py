@@ -203,3 +203,37 @@ class Event:
             frame_index=data.get("frame_index"),
             detail=dict(data.get("detail", {})),
         )
+
+
+class SystemEventType(str, Enum):
+    """System-level events (not tied to a track), e.g. config reloads."""
+
+    ZONES_RELOADED = "ZONES_RELOADED"
+    ZONES_REJECTED = "ZONES_REJECTED"
+
+
+@dataclass(slots=True)
+class SystemEvent:
+    """A system-level occurrence for the tamper-evident log (no track context)."""
+
+    event_type: SystemEventType
+    timestamp_utc: str
+    timestamp_monotonic: float
+    detail: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_type": self.event_type.value,
+            "timestamp_utc": str(self.timestamp_utc),
+            "timestamp_monotonic": float(self.timestamp_monotonic),
+            "detail": self.detail,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SystemEvent":
+        return cls(
+            event_type=SystemEventType(data["event_type"]),
+            timestamp_utc=str(data["timestamp_utc"]),
+            timestamp_monotonic=float(data["timestamp_monotonic"]),
+            detail=dict(data.get("detail", {})),
+        )

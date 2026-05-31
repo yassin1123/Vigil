@@ -66,6 +66,16 @@ class ZoneEventEngine:
         self._state.clear()
         self._last_track.clear()
 
+    def set_index(self, index: ZoneIndex) -> None:
+        """Swap in a new (hot-reloaded) ZoneIndex, dropping state for zones that
+        no longer exist. Membership for surviving zones re-evaluates next frame."""
+        self.index = index
+        self._include_zones = [z for z in index.zone_set if z.kind == ZoneKind.INCLUDE]
+        valid_ids = {z.id for z in index.zone_set}
+        for key in list(self._state):
+            if key[1] not in valid_ids:
+                del self._state[key]
+
     def update(
         self, tracks: list[Track], frame_info: object | None = None
     ) -> list[Event]:

@@ -21,8 +21,10 @@ from vigil.detect import Detector, MockDetector, TensorRTDetector
 from vigil.frames import FileFrameSource, MockFrameSource, build_frame_source
 from vigil.track import build_tracker
 from vigil.types import Detection
+from vigil.zones.config import load_zones, validate_zone_set
+from vigil.zones.model import ZoneError, ZoneSet
 
-_SUBCOMMANDS = {"run", "track-demo"}
+_SUBCOMMANDS = {"run", "track-demo", "zones"}
 
 
 # --------------------------------------------------------------------------- #
@@ -222,6 +224,63 @@ def cmd_track_demo(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# zones validate / show
+# --------------------------------------------------------------------------- #
+
+
+def cmd_zones_validate(args: argparse.Namespace) -> int:
+    try:
+        zone_set = load_zones(args.file)
+    except ZoneError as exc:
+        print(f"INVALID: {exc}")
+        return 1
+    w, h = zone_set.resolution
+    print(f"OK: {len(zone_set)} zone(s), resolution {w}x{h}")
+    return 0
+
+
+def cmd_zones_show(args: argparse.Namespace) -> int:
+    try:
+        zone_set = ZoneSet.from_file(args.file)
+    except ZoneError as exc:
+        print(f"error: {exc}")
+        return 1
+
+    w, h = zone_set.resolution
+    print(f"zones file: {args.file}  resolution={w}x{h}  zones={len(zone_set)}")
+    for zone in zone_set:
+        classes = ",".join(zone.classes) or "all"
+        print(
+            f"  {zone.id:<16} {zone.kind.value:<8} "
+            f"classes={classes:<14} points={len(zone.polygon)}"
+        )
+    issues = validate_zone_set(zone_set)
+    if issues:
+        print("  warnings:")
+        for issue in issues:
+            print(f"    - {issue}")
+
+    if args.overlay:
+        import cv2
+
+        from vigil.overlay import draw_zones
+
+        image = cv2.imread(args.overlay)
+        if image is None:
+            print(f"cannot read overlay image: {args.overlay}")
+            return 1
+        dest = args.out or "zones_overlay.png"
+        cv2.imwrite(dest, draw_zones(image, zone_set))
+        print(f"  overlay written -> {dest}")
+    return 0
+
+
+def cmd_zones(args: argparse.Namespace) -> int:
+    print("usage: vigil zones {validate|show} <file> [--overlay IMG --out OUT]")
+    return 2
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -248,6 +307,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo.add_argument("--detector", choices=("auto", "mock", "tensorrt"), default="mock")
     p_demo.add_argument("--config", type=Path, default=None)
     p_demo.set_defaults(func=cmd_track_demo)
+
+    p_zones = sub.add_parser("zones", help="zone file utilities (validate/show)")
+    p_zones.set_defaults(func=cmd_zones)
+    zsub = p_zones.add_subparsers(dest="zones_command")
+    p_val = zsub.add_parser("validate", help="validate a zones JSON file")
+    p_val.add_argument("file")
+    p_val.set_defaults(func=cmd_zones_validate)
+    p_zshow = zsub.add_parser("show", help="print zones; optionally overlay on a still")
+    p_zshow.add_argument("file")
+    p_zshow.add_argument("--overlay", help="still image to draw the zones on")
+    p_zshow.add_argument("--out", help="overlay output path (default: zones_overlay.png)")
+    p_zshow.set_defaults(func=cmd_zones_show)
     return parser
 
 
