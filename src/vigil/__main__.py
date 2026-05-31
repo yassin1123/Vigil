@@ -11,6 +11,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -25,7 +26,7 @@ from vigil.types import Detection
 from vigil.zones.config import load_zones, validate_zone_set
 from vigil.zones.model import ZoneError, ZoneSet
 
-_SUBCOMMANDS = {"run", "track-demo", "zones", "log"}
+_SUBCOMMANDS = {"run", "track-demo", "zones", "log", "bench"}
 
 
 # --------------------------------------------------------------------------- #
@@ -309,6 +310,41 @@ def cmd_log(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# bench
+# --------------------------------------------------------------------------- #
+
+
+def cmd_bench(args: argparse.Namespace) -> int:
+    from vigil.eval import run_benchmark_dir
+
+    report = run_benchmark_dir(args.clips)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    cfg = report["config"]
+    noise = cfg["noise"]
+    print(f"Vigil behaviour benchmark - clips: {args.clips}")
+    print(
+        f"  reference detector (NOT the TensorRT model): miss={noise['miss_rate']} "
+        f"jitter={noise['jitter_px']}px fp={noise['fp_rate']}"
+    )
+    for group, g in report["groups"].items():
+        d, t, z = g["detection"], g["tracking"], g["zones"]
+        print(f"\n[{group}]  clips: {', '.join(g['clips'])}")
+        print(f"  detection (reference): P={d['precision']:.3f} R={d['recall']:.3f}")
+        print(
+            f"  tracking : id_switches={t['id_switches']} "
+            f"frag={t['mean_fragmentation']:.2f} lifetime={t['mean_track_lifetime']:.1f}"
+        )
+        print(
+            f"  zones    : P={z['precision']:.3f} R={z['recall']:.3f} "
+            f"matched={z['matched']} missed={z['missed']} false_events={z['false_events']}"
+        )
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -354,6 +390,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_lv = logsub.add_parser("verify", help="verify a hash-chained JSONL log")
     p_lv.add_argument("path")
     p_lv.set_defaults(func=cmd_log_verify)
+
+    p_bench = sub.add_parser("bench", help="run the behaviour benchmark on committed clips")
+    p_bench.add_argument("--clips", default="benchmark/clips", help="clips directory")
+    p_bench.add_argument("--json", action="store_true", help="emit the full JSON report")
+    p_bench.set_defaults(func=cmd_bench)
     return parser
 
 

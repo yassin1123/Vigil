@@ -24,6 +24,7 @@ help: ## Show available targets
 	@echo "  make run           Capture -> detect -> track over the configured source"
 	@echo "  make track-demo    Print a track timeline for the committed demo clip"
 	@echo "  make verify-log    Verify the hash-chained event log (LOG=path)"
+	@echo "  make bench         Run the behaviour benchmark on committed clips"
 	@echo "  make bringup       On-Jetson: device + camera baseline -> docs/baseline/"
 	@echo "  make check-device  Probe Jetson/CUDA/TensorRT/camera"
 	@echo "  make camera-probe  Capture CSI frames, measure FPS"
@@ -50,6 +51,9 @@ track-demo: ## Print a track timeline for the committed demo clip (no GPU)
 
 verify-log: ## Verify the hash-chained event log (LOG=path to override)
 	PYTHONPATH=$(SRC) $(PYTHON) -m vigil log verify $(LOG)
+
+bench: ## Run the behaviour benchmark on the committed clips
+	PYTHONPATH=$(SRC) $(PYTHON) -m vigil bench
 
 bringup: check-device camera-probe ## Full Day-1 bring-up baseline (Jetson)
 	@echo ""
