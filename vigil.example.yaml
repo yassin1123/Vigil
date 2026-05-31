@@ -53,7 +53,9 @@ zones:
 # --- Tamper-evident event log (hash-chained JSONL; Day 5) ----------------
 log:
   path: logs/events.jsonl
-  export_dir: /media/vigil-export   # USB mount target for offline export
+  auto_export: true                 # export automatically when a USB drive appears
+  export_sink: usb                  # usb | null | localdir
+  export_dir: /media/vigil-export   # destination when export_sink = localdir
 
 # --- Operator UI (Day 6) -------------------------------------------------
 ui:

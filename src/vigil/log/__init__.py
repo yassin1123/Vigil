@@ -9,13 +9,29 @@ from vigil.log.canonical import (
     genesis_hash,
 )
 from vigil.log.logger import HashChainLogger, LogError, build_logger
+from vigil.log.sinks import (
+    AutoExporter,
+    ExportResult,
+    ExportSink,
+    LocalDirSink,
+    NullSink,
+    USBExportSink,
+    build_export_sink,
+)
 from vigil.log.verify import VerificationResult, verify_entries, verify_file
 
 __all__ = [
     "GENESIS_SEED",
+    "AutoExporter",
+    "ExportResult",
+    "ExportSink",
     "HashChainLogger",
+    "LocalDirSink",
     "LogError",
+    "NullSink",
+    "USBExportSink",
     "VerificationResult",
+    "build_export_sink",
     "build_logger",
     "canonical_bytes",
     "canonical_json",

@@ -113,10 +113,12 @@ class ZonesConfig:
 
 @dataclass
 class LogConfig:
-    """Tamper-evident hash-chained event log (Day 5)."""
+    """Tamper-evident hash-chained event log + offline export (Day 5)."""
 
     path: str = "logs/events.jsonl"
-    export_dir: str = "/media/vigil-export"  # USB mount target for offline export
+    auto_export: bool = True  # export automatically when a drive appears
+    export_sink: str = "usb"  # usb | null | localdir
+    export_dir: str = "/media/vigil-export"  # destination when export_sink = localdir
 
 
 @dataclass

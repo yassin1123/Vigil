@@ -206,10 +206,11 @@ class Event:
 
 
 class SystemEventType(str, Enum):
-    """System-level events (not tied to a track), e.g. config reloads."""
+    """System-level events (not tied to a track), e.g. config reloads, exports."""
 
     ZONES_RELOADED = "ZONES_RELOADED"
     ZONES_REJECTED = "ZONES_REJECTED"
+    LOG_EXPORTED = "LOG_EXPORTED"
 
 
 @dataclass(slots=True)
