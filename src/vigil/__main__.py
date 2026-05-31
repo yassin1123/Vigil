@@ -19,12 +19,13 @@ from typing import Optional
 from vigil.config import VigilConfig, load_config
 from vigil.detect import Detector, MockDetector, TensorRTDetector
 from vigil.frames import FileFrameSource, MockFrameSource, build_frame_source
+from vigil.log.verify import verify_file
 from vigil.track import build_tracker
 from vigil.types import Detection
 from vigil.zones.config import load_zones, validate_zone_set
 from vigil.zones.model import ZoneError, ZoneSet
 
-_SUBCOMMANDS = {"run", "track-demo", "zones"}
+_SUBCOMMANDS = {"run", "track-demo", "zones", "log"}
 
 
 # --------------------------------------------------------------------------- #
@@ -281,6 +282,33 @@ def cmd_zones(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# log verify
+# --------------------------------------------------------------------------- #
+
+
+def cmd_log_verify(args: argparse.Namespace) -> int:
+    result = verify_file(args.path)
+    genesis = result.genesis_hash[:12]
+    terminal = (result.terminal_hash or "-")[:12]
+    if result.ok:
+        print(
+            f"PASS: {result.entry_count} entr{'y' if result.entry_count == 1 else 'ies'}; "
+            f"chain intact from genesis {genesis}.. to terminal {terminal}.."
+        )
+        for warning in result.warnings:
+            print(f"  warning: {warning}")
+        return 0
+    where = "<read error>" if result.error_index is None else f"entry {result.error_index}"
+    print(f"FAIL at {where}: {result.error}")
+    return 1
+
+
+def cmd_log(args: argparse.Namespace) -> int:
+    print("usage: vigil log verify <path>")
+    return 2
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -319,6 +347,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_zshow.add_argument("--overlay", help="still image to draw the zones on")
     p_zshow.add_argument("--out", help="overlay output path (default: zones_overlay.png)")
     p_zshow.set_defaults(func=cmd_zones_show)
+
+    p_log = sub.add_parser("log", help="event log utilities (verify)")
+    p_log.set_defaults(func=cmd_log)
+    logsub = p_log.add_subparsers(dest="log_command")
+    p_lv = logsub.add_parser("verify", help="verify a hash-chained JSONL log")
+    p_lv.add_argument("path")
+    p_lv.set_defaults(func=cmd_log_verify)
     return parser
 
 

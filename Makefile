@@ -8,6 +8,7 @@ PYTHON   ?= python3
 SRC      := src
 SCRIPTS  := scripts
 BASELINE := docs/baseline
+LOG      ?= logs/events.jsonl
 
 .DEFAULT_GOAL := help
 
@@ -22,6 +23,7 @@ help: ## Show available targets
 	@echo "  make format        Auto-format + autofix with ruff"
 	@echo "  make run           Capture -> detect -> track over the configured source"
 	@echo "  make track-demo    Print a track timeline for the committed demo clip"
+	@echo "  make verify-log    Verify the hash-chained event log (LOG=path)"
 	@echo "  make bringup       On-Jetson: device + camera baseline -> docs/baseline/"
 	@echo "  make check-device  Probe Jetson/CUDA/TensorRT/camera"
 	@echo "  make camera-probe  Capture CSI frames, measure FPS"
@@ -45,6 +47,9 @@ run: ## Capture -> detect -> track over the configured source
 
 track-demo: ## Print a track timeline for the committed demo clip (no GPU)
 	PYTHONPATH=$(SRC) $(PYTHON) -m vigil track-demo
+
+verify-log: ## Verify the hash-chained event log (LOG=path to override)
+	PYTHONPATH=$(SRC) $(PYTHON) -m vigil log verify $(LOG)
 
 bringup: check-device camera-probe ## Full Day-1 bring-up baseline (Jetson)
 	@echo ""

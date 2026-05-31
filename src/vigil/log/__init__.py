@@ -9,14 +9,18 @@ from vigil.log.canonical import (
     genesis_hash,
 )
 from vigil.log.logger import HashChainLogger, LogError, build_logger
+from vigil.log.verify import VerificationResult, verify_entries, verify_file
 
 __all__ = [
     "GENESIS_SEED",
     "HashChainLogger",
     "LogError",
+    "VerificationResult",
     "build_logger",
     "canonical_bytes",
     "canonical_json",
     "entry_hash",
     "genesis_hash",
+    "verify_entries",
+    "verify_file",
 ]
