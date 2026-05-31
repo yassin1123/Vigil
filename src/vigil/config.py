@@ -105,9 +105,10 @@ class TrackerConfig:
 
 @dataclass
 class ZonesConfig:
-    """Polygon zone definitions — a local JSON file (Day 4)."""
+    """Polygon zone definitions (local JSON) + event debounce (Day 4)."""
 
     path: str = "config/zones.json"
+    debounce_frames: int = 3  # frames membership must persist before ENTRY/EXIT fires
 
 
 @dataclass

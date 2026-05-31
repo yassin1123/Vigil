@@ -155,33 +155,51 @@ class EventType(str, Enum):
 
 @dataclass(slots=True)
 class Event:
-    """Something worth recording in the tamper-evident log.
+    """A zone entry/exit occurrence with full context for the tamper-evident log.
 
-    Placeholder for Days 4–5 (zone engine + hash-chained log). `detail` carries
-    event-specific payload without changing the schema.
+    Carries both clocks: `timestamp_utc` (ISO-8601 wall-clock, for humans) and
+    `timestamp_monotonic` (capture monotonic seconds, immune to clock changes).
+    This is exactly the record the Day-5 hash-chained logger writes.
     """
 
     event_type: EventType
-    timestamp: float
-    track_id: int | None = None
-    zone_id: str | None = None
+    track_id: int
+    zone_id: str
+    class_name: str
+    timestamp_utc: str
+    timestamp_monotonic: float
+    centroid: tuple[float, float]
+    bbox: BBox
+    frame_index: int | None = None
     detail: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "event_type": self.event_type.value,
-            "timestamp": float(self.timestamp),
-            "track_id": self.track_id,
-            "zone_id": self.zone_id,
+            "track_id": int(self.track_id),
+            "zone_id": str(self.zone_id),
+            "class_name": str(self.class_name),
+            "timestamp_utc": str(self.timestamp_utc),
+            "timestamp_monotonic": float(self.timestamp_monotonic),
+            "centroid": [float(self.centroid[0]), float(self.centroid[1])],
+            "bbox": [float(v) for v in self.bbox],
+            "frame_index": self.frame_index,
             "detail": self.detail,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Event":
+        c = data["centroid"]
+        b = data["bbox"]
         return cls(
             event_type=EventType(data["event_type"]),
-            timestamp=float(data["timestamp"]),
-            track_id=data.get("track_id"),
-            zone_id=data.get("zone_id"),
+            track_id=int(data["track_id"]),
+            zone_id=str(data["zone_id"]),
+            class_name=str(data["class_name"]),
+            timestamp_utc=str(data["timestamp_utc"]),
+            timestamp_monotonic=float(data["timestamp_monotonic"]),
+            centroid=(float(c[0]), float(c[1])),
+            bbox=(float(b[0]), float(b[1]), float(b[2]), float(b[3])),
+            frame_index=data.get("frame_index"),
             detail=dict(data.get("detail", {})),
         )

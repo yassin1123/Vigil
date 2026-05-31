@@ -48,6 +48,7 @@ tracker:
 # --- Zones (polygon triggers; Day 4) — a local JSON file, never fetched --
 zones:
   path: config/zones.json
+  debounce_frames: 3        # frames membership must persist before ENTRY/EXIT fires
 
 # --- Tamper-evident event log (hash-chained JSONL; Day 5) ----------------
 log:

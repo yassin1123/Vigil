@@ -46,9 +46,14 @@ def test_event_roundtrip_and_enum():
     assert EventType.ZONE_EXIT.value == "ZONE_EXIT"
     event = Event(
         event_type=EventType.ZONE_ENTRY,
-        timestamp=12.5,
         track_id=7,
         zone_id="dock-A",
+        class_name="person",
+        timestamp_utc="2026-05-31T00:00:00+00:00",
+        timestamp_monotonic=12.5,
+        centroid=(10.0, 20.0),
+        bbox=(0.0, 0.0, 20.0, 40.0),
+        frame_index=3,
         detail={"speed": 1.2},
     )
     data = event.to_dict()
