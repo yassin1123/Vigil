@@ -4,6 +4,7 @@ from __future__ import annotations
 from vigil.config import VigilConfig, load_config
 from vigil.detect import Detector, MockDetector, TensorRTDetector
 from vigil.frames import Frame, FrameSource, build_frame_source
+from vigil.log import HashChainLogger, build_logger
 from vigil.track import ByteTrackTracker, Tracker, build_tracker
 from vigil.types import (
     BBox,
@@ -26,6 +27,7 @@ __all__ = [
     "EventType",
     "Frame",
     "FrameSource",
+    "HashChainLogger",
     "MockDetector",
     "SystemEvent",
     "SystemEventType",
@@ -35,6 +37,7 @@ __all__ = [
     "VigilConfig",
     "__version__",
     "build_frame_source",
+    "build_logger",
     "build_tracker",
     "load_config",
 ]
