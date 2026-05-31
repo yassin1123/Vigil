@@ -112,13 +112,64 @@ class ZonesConfig:
 
 
 @dataclass
+class MeshSinkConfig:
+    """Roadmap: stream each event to peer units over a local link (Day 7 rails)."""
+
+    enabled: bool = False
+    peers: list[str] = field(default_factory=list)
+    link: str = "lan"  # lan | serial | ...
+
+
+@dataclass
+class RFBurstSinkConfig:
+    """Roadmap: on a low-signal trigger, transmit the last N entries (rails)."""
+
+    enabled: bool = False
+    burst_entries: int = 50
+    trigger: str = "signal_loss"
+
+
+@dataclass
+class ArmoredModuleSinkConfig:
+    """Roadmap: write to a separable encrypted store (rails)."""
+
+    enabled: bool = False
+    mount: str = "/dev/vigil-armored"
+    cipher: str = "aes-256-gcm"
+
+
+@dataclass
 class LogConfig:
-    """Tamper-evident hash-chained event log + offline export (Day 5)."""
+    """Tamper-evident hash-chained event log + offline export (Day 5/7).
+
+    The mesh/rf/armored sub-sections are roadmap RAILS only — enabling them adds
+    a stub sink that honestly reports itself unimplemented (see sinks.py)."""
 
     path: str = "logs/events.jsonl"
     auto_export: bool = True  # export automatically when a drive appears
     export_sink: str = "usb"  # usb | null | localdir
     export_dir: str = "/media/vigil-export"  # destination when export_sink = localdir
+    mesh: MeshSinkConfig = field(default_factory=MeshSinkConfig)
+    rf: RFBurstSinkConfig = field(default_factory=RFBurstSinkConfig)
+    armored: ArmoredModuleSinkConfig = field(default_factory=ArmoredModuleSinkConfig)
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "LogConfig":
+        if data is None:
+            return cls()
+        _require_mapping(data, "log")
+        _reject_unknown(cls, data, "log")
+        flat = {
+            k: data[k]
+            for k in ("path", "auto_export", "export_sink", "export_dir")
+            if k in data
+        }
+        return cls(
+            **flat,
+            mesh=_build(MeshSinkConfig, data.get("mesh"), "log.mesh"),
+            rf=_build(RFBurstSinkConfig, data.get("rf"), "log.rf"),
+            armored=_build(ArmoredModuleSinkConfig, data.get("armored"), "log.armored"),
+        )
 
 
 @dataclass
@@ -173,7 +224,7 @@ class VigilConfig:
             model=_build(ModelConfig, data.get("model"), "model"),
             tracker=_build(TrackerConfig, data.get("tracker"), "tracker"),
             zones=_build(ZonesConfig, data.get("zones"), "zones"),
-            log=_build(LogConfig, data.get("log"), "log"),
+            log=LogConfig.from_dict(data.get("log")),
             ui=_build(UIConfig, data.get("ui"), "ui"),
             telemetry=_build(TelemetryConfig, data.get("telemetry"), "telemetry"),
         )

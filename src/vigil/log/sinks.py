@@ -23,8 +23,9 @@ import platform
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from vigil.log.verify import verify_file
 from vigil.types import SystemEvent, SystemEventType
@@ -37,6 +38,36 @@ EXPORT_DIRNAME = "vigil-export"
 Copier = Callable[[str, str], object]
 
 
+class ExportTrigger(str, Enum):
+    """What activates a sink. The app detects these and routes accordingly."""
+
+    DRIVE_INSERTED = "drive_inserted"  # a removable drive appeared (USB)
+    PEER_AVAILABLE = "peer_available"  # a mesh peer is reachable
+    SIGNAL_LOSS = "signal_loss"  # low-power / low-signal condition (RF burst)
+    EVENT_APPENDED = "event_appended"  # a new event was logged (per-event stream)
+
+
+@dataclass(frozen=True)
+class SinkCapabilities:
+    """What a sink is and does — lets the app route without knowing the type."""
+
+    name: str
+    triggers: frozenset[ExportTrigger]
+    mode: str  # "batch" (whole log) | "stream" (per event) | "burst" (last N)
+    implemented: bool  # True = real backend; False = roadmap stub (rails only)
+    description: str
+
+
+@dataclass
+class DispatchContext:
+    """Everything a sink might need for one export opportunity."""
+
+    trigger: ExportTrigger
+    log_path: Optional[Path] = None  # whole log on disk (batch)
+    record: Optional[dict[str, Any]] = None  # one event (stream)
+    recent_records: Optional[list[dict[str, Any]]] = None  # last N (burst)
+
+
 @dataclass
 class ExportResult:
     ok: bool
@@ -46,6 +77,7 @@ class ExportResult:
     verified: bool = False
     entry_count: int = 0
     error: Optional[str] = None
+    implemented: bool = True  # False when a roadmap stub honestly declines
 
     def __bool__(self) -> bool:
         return self.ok
@@ -113,9 +145,19 @@ def _copy_and_verify(
 
 
 class ExportSink(abc.ABC):
-    """Where the log goes. Backends differ; the logger never knows which."""
+    """Where the log goes. Backends differ; the logger never knows which.
+
+    Adding a new backend (mesh, RF, armoured, ...) means implementing this
+    interface — never editing the routing core. `capabilities()` declares the
+    triggers and mode the router uses to dispatch; `handle()` is the uniform
+    entry point the router calls.
+    """
 
     name: str = "sink"
+
+    @abc.abstractmethod
+    def capabilities(self) -> SinkCapabilities:
+        """Declare triggers, mode, and whether this backend is actually built."""
 
     @abc.abstractmethod
     def available(self) -> Optional[Path]:
@@ -125,11 +167,26 @@ class ExportSink(abc.ABC):
     def export(self, log_path: str | Path) -> ExportResult:
         """Copy the log to the target and re-verify the chain there."""
 
+    def handle(self, ctx: DispatchContext) -> ExportResult:
+        """Uniform router entry point. Batch sinks export the whole log."""
+        if ctx.log_path is not None:
+            return self.export(ctx.log_path)
+        return ExportResult(
+            ok=False, sink=self.name, destination=None,
+            error="no log_path in dispatch context",
+        )
+
 
 class NullSink(ExportSink):
     """Exports nothing — disables export while keeping the interface."""
 
     name = "null"
+
+    def capabilities(self) -> SinkCapabilities:
+        return SinkCapabilities(
+            self.name, frozenset(), "batch", implemented=True,
+            description="export disabled (deliberate no-op)",
+        )
 
     def available(self) -> Optional[Path]:
         return None
@@ -147,6 +204,12 @@ class LocalDirSink(ExportSink):
     def __init__(self, dest_root: str | Path, copier: Copier = shutil.copy2) -> None:
         self.dest_root = Path(dest_root)
         self._copier = copier
+
+    def capabilities(self) -> SinkCapabilities:
+        return SinkCapabilities(
+            self.name, frozenset({ExportTrigger.DRIVE_INSERTED}), "batch",
+            implemented=True, description="local directory export (CI/test)",
+        )
 
     def available(self) -> Optional[Path]:
         return self.dest_root if self.dest_root.is_dir() else None
@@ -182,6 +245,12 @@ class USBExportSink(ExportSink):
         )
         self._require_mountpoint = require_mountpoint
         self._copier = copier
+
+    def capabilities(self) -> SinkCapabilities:
+        return SinkCapabilities(
+            self.name, frozenset({ExportTrigger.DRIVE_INSERTED}), "batch",
+            implemented=True, description="USB removable-drive export (built)",
+        )
 
     def _iter_children(self, roots: list[Path]) -> list[Path]:
         mounts: list[Path] = []
@@ -311,7 +380,7 @@ class AutoExporter:
 
 
 def build_export_sink(config: "VigilConfig") -> ExportSink:
-    """Construct the export sink named by config.log.export_sink."""
+    """Construct the primary export sink named by config.log.export_sink."""
     kind = config.log.export_sink
     if kind == "null":
         return NullSink()
@@ -320,3 +389,137 @@ def build_export_sink(config: "VigilConfig") -> ExportSink:
     if kind == "usb":
         return USBExportSink()
     raise ValueError(f"unknown export_sink: {kind!r} (expected usb|null|localdir)")
+
+
+# ===========================================================================
+# Roadmap export backends — RAILS ONLY.
+#
+# These are NOT built. They define the interface (capabilities + the method a
+# real backend would implement) and honestly report themselves unimplemented:
+# their handle()/export() return implemented=False (never a silent success), and
+# their concrete transmit/burst/write methods raise NotImplementedError. No real
+# radio, link, or crypto exists here. See docs/LOG_EXPORT_ROADMAP.md.
+# ===========================================================================
+
+
+class _RoadmapSink(ExportSink):
+    """Base for not-yet-built backends. Honestly declines all work."""
+
+    _triggers: frozenset[ExportTrigger] = frozenset()
+    _mode: str = "batch"
+    _description: str = "roadmap stub"
+
+    def __init__(self, config: object | None = None) -> None:
+        self.config = config
+
+    def capabilities(self) -> SinkCapabilities:
+        return SinkCapabilities(
+            self.name, self._triggers, self._mode,
+            implemented=False, description=self._description,
+        )
+
+    def available(self) -> Optional[Path]:
+        return None  # never available until the real backend is built
+
+    def _decline(self) -> ExportResult:
+        return ExportResult(
+            ok=False, sink=self.name, destination=None, implemented=False,
+            error=(
+                f"{self.name} is a roadmap stub — not implemented "
+                f"(see docs/LOG_EXPORT_ROADMAP.md)"
+            ),
+        )
+
+    def export(self, log_path: str | Path) -> ExportResult:
+        return self._decline()
+
+    def handle(self, ctx: DispatchContext) -> ExportResult:
+        return self._decline()
+
+
+class MeshStreamSink(_RoadmapSink):
+    """Roadmap: stream each event to peer units over a local link. Would emit
+    MESH_PEER_ACK on a peer acknowledgement. NOT IMPLEMENTED."""
+
+    name = "mesh-stream"
+    _triggers = frozenset({ExportTrigger.PEER_AVAILABLE, ExportTrigger.EVENT_APPENDED})
+    _mode = "stream"
+    _description = "stream events to mesh peers (rails only)"
+
+    def stream_event(self, record: dict[str, Any]) -> ExportResult:
+        raise NotImplementedError(
+            "MeshStreamSink.stream_event is a roadmap stub: no mesh link exists. "
+            "A real implementation would push the event to peers and emit "
+            "MESH_PEER_ACK on acknowledgement."
+        )
+
+
+class RFBurstSink(_RoadmapSink):
+    """Roadmap: on a low-signal trigger, transmit the last N entries as a burst.
+    Would emit RF_BURST_SENT. NOT IMPLEMENTED."""
+
+    name = "rf-burst"
+    _triggers = frozenset({ExportTrigger.SIGNAL_LOSS})
+    _mode = "burst"
+    _description = "RF burst of recent entries on signal loss (rails only)"
+
+    def burst(self, recent_records: list[dict[str, Any]]) -> ExportResult:
+        raise NotImplementedError(
+            "RFBurstSink.burst is a roadmap stub: no radio exists. A real "
+            "implementation would transmit the last N entries and emit RF_BURST_SENT."
+        )
+
+
+class ArmoredModuleSink(_RoadmapSink):
+    """Roadmap: write each event to a separable encrypted store. Would emit
+    ARMORED_WRITE. NOT IMPLEMENTED (no crypto here)."""
+
+    name = "armored-module"
+    _triggers = frozenset({ExportTrigger.EVENT_APPENDED})
+    _mode = "stream"
+    _description = "write to a separable encrypted store (rails only)"
+
+    def write(self, record: dict[str, Any]) -> ExportResult:
+        raise NotImplementedError(
+            "ArmoredModuleSink.write is a roadmap stub: no encrypted store or "
+            "cipher exists. A real implementation would persist the event to the "
+            "armoured module and emit ARMORED_WRITE."
+        )
+
+
+class ExportRouter:
+    """Routes an export opportunity to whichever sinks declare its trigger.
+
+    The router never special-cases a sink type — it dispatches purely on declared
+    capabilities, so a future real backend joins by implementing ExportSink.
+    """
+
+    def __init__(self, sinks: list[ExportSink]) -> None:
+        self.sinks = list(sinks)
+
+    def capabilities(self) -> list[SinkCapabilities]:
+        return [s.capabilities() for s in self.sinks]
+
+    def sinks_for(self, trigger: ExportTrigger) -> list[ExportSink]:
+        return [s for s in self.sinks if trigger in s.capabilities().triggers]
+
+    def dispatch(self, ctx: DispatchContext) -> list[ExportResult]:
+        return [s.handle(ctx) for s in self.sinks_for(ctx.trigger)]
+
+
+def build_export_router(config: "VigilConfig") -> ExportRouter:
+    """Assemble the router: the built primary sink plus any enabled roadmap stubs.
+
+    Enabling a roadmap backend in config adds its stub so that, when its trigger
+    fires, the router dispatches and the stub honestly reports unimplemented —
+    rather than the operator silently believing export happened.
+    """
+    sinks: list[ExportSink] = [build_export_sink(config)]
+    log = config.log
+    if log.mesh.enabled:
+        sinks.append(MeshStreamSink(log.mesh))
+    if log.rf.enabled:
+        sinks.append(RFBurstSink(log.rf))
+    if log.armored.enabled:
+        sinks.append(ArmoredModuleSink(log.armored))
+    return ExportRouter(sinks)

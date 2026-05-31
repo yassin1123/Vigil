@@ -211,6 +211,11 @@ class SystemEventType(str, Enum):
     ZONES_RELOADED = "ZONES_RELOADED"
     ZONES_REJECTED = "ZONES_REJECTED"
     LOG_EXPORTED = "LOG_EXPORTED"
+    # Records the roadmap export backends WOULD emit once built (rails only;
+    # no real code emits these yet — see docs/LOG_EXPORT_ROADMAP.md).
+    MESH_PEER_ACK = "MESH_PEER_ACK"
+    RF_BURST_SENT = "RF_BURST_SENT"
+    ARMORED_WRITE = "ARMORED_WRITE"
 
 
 @dataclass(slots=True)

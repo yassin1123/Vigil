@@ -57,6 +57,21 @@ log:
   export_sink: usb                  # usb | null | localdir
   export_dir: /media/vigil-export   # destination when export_sink = localdir
 
+  # Roadmap export backends — RAILS ONLY (Day 7). Enabling one adds a stub that
+  # honestly reports itself unimplemented. See docs/LOG_EXPORT_ROADMAP.md.
+  mesh:                             # stream each event to peer units
+    enabled: false
+    peers: []
+    link: lan                       # lan | serial
+  rf:                               # burst the last N entries on signal loss
+    enabled: false
+    burst_entries: 50
+    trigger: signal_loss
+  armored:                          # write to a separable encrypted store
+    enabled: false
+    mount: /dev/vigil-armored
+    cipher: aes-256-gcm
+
 # --- Operator UI (Day 6) -------------------------------------------------
 ui:
   opencv_window: true
